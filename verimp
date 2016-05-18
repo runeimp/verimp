@@ -2,7 +2,12 @@
 ###################
 # VerImp
 #
-# Semantic Versioning number comparison script that can handle common package manager syntax.
+# SemVer (Semantic Versioning) number handling script that can compare common package manager syntax.
+# In other words; it supports the syntax used by npm. Full support for bundler, etc. to come at a later date.
+#
+# @see [Semantic Versioning]: http://semver.org/
+# @see [Semantic versioning and npm | npm Documentation]: https://docs.npmjs.com/getting-started/semantic-versioning
+# @see [sindresorhus/semver-regex: Regular expression for matching semver versions]: https://github.com/sindresorhus/semver-regex
 #
 #####
 # Exit Codes:
@@ -14,6 +19,7 @@
 #####
 # ChangeLog:
 # ----------
+# 2016-05-10  0.0.2      Radical logic changes.
 # 2016-05-10  0.0.1      Initial script creation.
 #
 #
@@ -22,269 +28,699 @@ APP_AUTHOR_NAME="RuneImp"
 APP_AUTHOR_MAIL="runeimp@gmail.com"
 APP_NAME="VerImp"
 APP_FILE="verimp"
-APP_VERSION="0.0.1"
+APP_VERSION="0.0.2"
 APP_LICENSES="http://opensource.org/licenses/MIT"
 APP_LABEL="${APP_AUTHOR_NAME}'s $APP_NAME v$APP_VERSION
 License(s): $APP_LICENSES"
 
-# SEMVER_RE='([~xX*^]?)([0-9]*)\.([0-9Xx\*]+)(\.([0-9Xx*]+))?[_-]?(.*)'
-# SEMVER_RE='(.?)([0-9]+)\.([0-9Xx\*]+)(\.([0-9Xx*]+))?[_-]?(.*)'
-# SEMVER_RE='(.)?([0-9]+)?(\.([0-9]+))?(\.([0-9]+))?[_-]?(.*)'
-# SEMVER_RE='(\x)([0-9]+)\.([0-9Xx\*]+)(\.([0-9Xx*]+))(.*)'
-# SEMVER_RE='(^[^\d]|^)?(\dxX*)?(\.([\dxX*]+))?(\.([\dxX*]+))?[_+-]?(.*)'
-# SEMVER_RE='(^[xXvV~*^]|^)?(\dxX*)?(\.([\dxX*]+))?(\.([\dxX*]+))?[_+-]?(.*)'
-SEMVER_RE='(^[xXvV~*^]|^)?([0-9xX*]*)(\.([0-9xX*]+))?(\.([0-9xX*]+))?[_+-]?(.*)'
 
-ver_one="$1"
-ver_two="$2"
+#
+# CONSTANTS
+#
+declare -i VER_SRC=0
+declare -i VER_RNG=1
+declare -i VER_MMP=2
+declare -i VER_MJR=3
+declare -i VER_MNR=4
+declare -i VER_PCH=5
+declare -i VER_PRT=6
+declare -i VER_BLD=7
 
-# echo "\$ver_one: $ver_one | \${ver_one:0:1}: ${ver_one:0:1}"
-# echo "\$ver_two: $ver_two | \${ver_two:0:1}: ${ver_two:0:1}"
+# SemVer MMP (Major.Minor.Patch) RegEx
+SEMVER_MMP_RE='(([0-9]+)?(\.([0-9]+))?(\.([0-9]+))?)' # RegEx Positions: 1=MMP, 2=Major, 3=Minor, 4=Patch
+
+# SemVer 1.0.0 RegEx with Range Indicator or Version Denotation prefix
+SEMVER_1_RE='(^[xXvV~*^]|^)?([0-9xX*]*)(\.([0-9xX*]+))?(\.(xX*|[0-9]+))?(-([^+]*))?([+](.*))?'
+
+# SemVer 2.0.0 RegEx with Range Indicator or Version Denotation prefix
+SEMVER_2_RE='(^[vV~^]|^)?([xX*]|[0-9]+)?(\.([xX*]|[0-9]+))?(\.([xX*]|[0-9]+))?([-]([0-9a-zA-Z-]+))?([+](.+))?'
+
+# SEMVER_2_RE with permissive Prerelease delimiter
+SEMVER_NORMALIZE_RE='(^[vV~^]|^)?([xX*]|[0-9]+)?(\.([xX*]|[0-9]+))?(\.([xX*]|[0-9]+))?([^+]([0-9a-zA-Z-]+))?([+](.+))?'
+
+# SEMVER_2_RE with permissive tagging
+SEMVER_ALL_TAGS_RE='(^[vV~^]|^)?([xX*]|[0-9]+)?(\.([xX*]|[0-9]+))?(\.([xX*]|[0-9]+))?([^+]([^+]+)(\+(.+))?)?'
+
+ONE_OR_TWO_POSITION_VER_RE='^[0-9]+(\.[0-9]+)?$'
+
+#
+# VARIABLES
+#
 
 
-compare_suffix()
+#
+# FUNCTIONS
+#
+
+
+semver_clean_args()
 {
-	local suffix_one="$1"
-	local suffix_two="$2"
-	local char_one="$1"
-	local char_two="$2"
-	local chunk_one="$1"
-	local chunk_two="$2"
+	local clean=''
+	local -i major
+	local -i minor
+	local -i patch
 
-	echo "compare_suffix_one() | \$suffix_one: $suffix_one | \$suffix_two: $suffix_two" 1>&2
+	[[ "$1" = '*' ]] && major=0 || major="$1"
+	[[ "$2" = '*' ]] && minor=0 || minor="$2"
+	[[ "$3" = '*' ]] && patch=0 || patch="$3"
+	clean="${major}.${minor}.${patch}"
 
-	if [[ -z "$suffix_one" ]] && [[ -z "$suffix_two" ]]; then
-		return 0
-	elif [[ "x${suffix_one}x" = "x${suffix_two}x" ]]; then
-		return 0
-	elif [[ ! -z "$suffix_one" ]] && [[ -z "$suffix_two" ]]; then
-		return 0
-	elif [[ ! -z "$suffix_one" ]] && [[ ! -z "$suffix_two" ]]; then
-
-		until [[ ${#suffix_one} = 0 ]] && [[ ${#suffix_two} = 0 ]]; do
-			chunk_one="${suffix_one%%.*}"
-			chunk_two="${suffix_two%%.*}"
-
-			if [[ ${#chunk_one} = 0 ]] && [[ ${#suffix_one} -gt 0 ]]; then
-				chunk_one="$suffix_one"
-			else
-				suffix_one="${suffix_one#$chunk_one}"
-			fi
-			if [[ ${#chunk_two} = 0 ]] && [[ ${#suffix_two} -gt 0 ]]; then
-				chunk_two="$suffix_two"
-			else
-				suffix_two="${suffix_two#$chunk_two}"
-			fi
-
-			[[ "${suffix_one:0:1}" = '.' ]] && suffix_one="${suffix_one:1}"
-			[[ "${suffix_two:0:1}" = '.' ]] && suffix_two="${suffix_two:1}"
-
-			printf "compare_suffix_one() | \$chunk_one: %8s | \$suffix_one: %s\n" "$chunk_one" "$suffix_one" 1>&2
-			printf "compare_suffix_one() | \$chunk_two: %8s | \$suffix_two: %s\n" "$chunk_two" "$suffix_two" 1>&2
-
-			#
-			# Empty chunks rate higher than non-empty
-			#
-			if [[ ! -z "$chunk_one" ]] && [[ -z "$chunk_two" ]]; then
-				return 0
-			elif [[ -z "$chunk_one" ]] && [[ ! -z "$chunk_two" ]]; then
-				return 1
-			else
-				if [[ "$chunk_one" < "$chunk_two" ]]; then
-					# echo "compare_suffix_one() | $chunk_one is > $chunk_two"
-					return 0
-				elif [[ "$chunk_one" > "$chunk_two" ]]; then
-					# echo "compare_suffix_one() | $chunk_one is > $chunk_two"
-					return 1
-				fi
-			fi
-		done
-
-		return 1
-	else
-		return 1
-	fi
+	# echo "semver_clean_args() | \$clean: $clean" 1>&2
+	printf '%s' "$clean"
 }
 
 
-compare_versions()
+semver_clean_re()
 {
-	echo "compare_versions() | \$ver_one: $ver_one | \$ver_two: $ver_two"
+	local clean=''
+	local -i major
+	local -i minor
+	local -i patch
+	local temp=''
 
-	local ver_tmp="$ver_one"
-	local result
+	if [[ "$1" =~ $SEMVER_MMP_RE ]]; then
+		# local len=${#BASH_REMATCH[@]}
+		# let "len -= 1"
+		# for i in $(seq 1 $len); do
+		# 	verimp_error "semver_clean_re() | \${BASH_REMATCH[$i]}: '${BASH_REMATCH[$i]}'"
+		# done
+		
+		temp="${BASH_REMATCH[1]}"
+		[[ "x${temp}x" != 'xx' ]] && clean=$temp || clean=0.0.0
+		temp="${BASH_REMATCH[2]}"
+		[[ "x${temp}x" != 'xx' ]] && major=$temp || major=0
+		temp="${BASH_REMATCH[4]}"
+		[[ "x${temp}x" != 'xx' ]] && minor=$temp || minor=0
+		temp="${BASH_REMATCH[6]}"
+		[[ "x${temp}x" != 'xx' ]] && patch=$temp || patch=0
 
-	local prefix_one
-	local -i major_one
-	local -i minor_one
-	local -i patch_one
-	local suffix_one
-	
-	local prefix_two
-	local -i major_two
-	local -i minor_two
-	local -i patch_two
-	local suffix_two
+		[[ "$clean" == '0.0.0' ]] && clean="${major}.${minor}.${patch}"
+		# clean="${major}.${minor}.${patch}"
+		verimp_error "semver_clean_re() | MMP: '${major}.${minor}.${patch}' | clean: $clean"
+	fi
 
-	if [[ "${ver_two:0:1}" = '~' ]]; then
+	printf '%s' "$clean"
+}
+
+
+semver_normalize_x()
+{
+	local result="$1"
+
+	case "$1" in
+		[X*] | '')	result='x'	;;
+	esac
+	# verimp_error "$(printf "semver_normalize_x() | input: %-3s | output: %-3s" "'$1'" "'$result'")"
+
+	printf '%s' "$result"
+}
+
+
+semver_ranger()
+{
+	local range="$1"
+	local major="$(semver_normalize_x "$2")"
+	local minor="$(semver_normalize_x "$3")"
+	local patch="$(semver_normalize_x "$4")"
+	local result=''
+
+	# echo "semver_ranger() | \$range: $range | \$major: $major | \$minor: $minor | \$patch: $patch" 1>&2
+
+	if [[ "$range" = '~' ]]; then
+		# Note: y is the actual value that matches [0-9]+ or [1-9][0-9]*
+		# ~ = x.x.x
+		# ~1 = 1.x.x
+		# ~1.x = 1.x.x
+		# ~1\.[0-9]+ = 1.y.x
+		# ~1\.[0-9]+\.0 = 1.y.x
+		# ~1\.[0-9]+\.[1-9][0-9]* = ~1.0.y
+
+		#
+		# If it is a number and not X or an empty string
+		if [[ $major -ge 0 ]] && [[ "$major" != 'x' ]]; then
+			if [[ $minor -ge 0 ]]; then
+				if [[ $patch -gt 0 ]]; then
+					: # Nada
+				else # Patch is 0, 'x', or empty
+					patch='x'
+					range=''
+				fi
+			else # Minor is 'x' or empty
+				minor='x'
+				patch='x'
+				range=''
+			fi
+		else # Major is 'x' or empty
+			major=0
+			minor='x'
+			patch='x'
+			range=''
+		fi
+	elif [[ "$range" = '^' ]]; then
+		# Note: y (minor) and x (patch) is the actual value that matches [0-9]+ or [1-9][0-9]*
+		# ^[1+] = 1.x.x
+		# ^[1+].[0-9x] = 1.x.x
+		# ^[1+].[0-9x] = 1.x.x
+		# ^[1+].[0-9x].[0-9x] = 1.x.x
+		# ^0.[1+] = 0.1.x
+		# ^0.[1+].[0-9x] = 0.1.x
+
+		if [[ $major -gt 0 ]]; then
+			minor='x'
+			patch='x'
+			range=''
+		elif [[ $major -eq 0 ]] &&  [[ $major != 'x' ]]; then
+			[[ $minor -gt 0 ]] && patch='x'
+			range=''
+		else # Major is x or empty
+			major=0
+			minor=0
+			patch=0
+			range=''
+		fi
+
+	fi
+	result="${range}${major}.${minor}.${patch}"
+
+	# echo "semver_ranger() | \$result: $result" 1>&2
+	printf '%s' "$result"
+}
+
+
+template_error()
+{
+	# echo "-- \$1: $1" 1>&2 # Debugging
+	echo "  $(printf "$@")" 1>&2
+}
+
+
+semver_compare_mmp_mod()
+{
+	local range_one="$1"
+	local major_one="$2"
+	local minor_one="$3"
+	local patch_one="$4"
+	local major_two="$5"
+	local minor_two="$6"
+	local patch_two="$7"
+	local mod_x="$8"
+	local max_x="$9"
+	shift
+	local -i max_cap=$9
+	local result=1
+
+	template_error 'semver_compare_mmp_mod() | range_one: %1s | mod_x: %-5s | max_x: %-5s | max_cap: %d' "$range_one" "$mod_x" "$max_x" $max_cap
+
+	if [[ "$mod_x" = 'major' ]]; then
+		if [[ $major_one -le $major_two ]] && [[ $major_two -lt $max_cap ]]; then
+			result=0
+		fi
+	elif [[ "$mod_x" = 'minor' ]]; then
+		if [[ $minor_one -le $minor_two ]]; then
+			if [[ $major_one -le $major_two ]] && [[ $major_two -lt $max_cap ]]; then
+				result=0
+			fi
+		fi
+	elif [[ "$mod_x" = 'patch' ]]; then
+		if [[ $patch_one -le $patch_one ]]; then
+			if [[ $minor_one -le $minor_two ]] && [[ $minor_two -lt $max_cap ]]; then
+				if [[ $major_one -eq $major_two ]]; then
+					result=0
+				fi
+			fi
+		fi
+	elif [[ "$mod_x" = 'equal' ]]; then
+		if [[ $major_one -eq $major_two ]] && [[ $minor_one -eq $minor_two ]] && [[ $patch_one -eq $patch_two ]]; then
+			result=0
+		fi
+	fi
+
+	return $result
+}
+#
+# mod_x = if minor is >= 0 then minor
+# mod_x = if patch is >= 0 then patch
+#
+# max_x = if mod_x is minor then major
+# max_x = if mod_x is patch then minor
+#
+semver_compare_mmp()
+{
+	local -i int_parse
+	local range_one="$1"
+	local major_one="$2"
+	local minor_one="$3"
+	local patch_one="$4"
+	local -i major_two="$5"
+	local -i minor_two="$6"
+	local -i patch_two="$7"
+	local mod_x=''
+	local max_x=''
+	local -i max_cap=0
+
+	if [[ $range_one = '~' ]]; then
+		if [[ $minor_one -ge 0 ]] && [[ $minor_one != 'x' ]]; then
+			mod_x='minor'
+		fi
+
+		if [[ $patch_one -ge 0 ]] && [[ $minor_one != 'x' ]]; then
+			mod_x='patch'
+		fi
+
+		[[ "$mod_x" = 'minor' ]] && max_x='major'
+		[[ "$mod_x" = 'patch' ]] && max_x='minor'
+
+		[[ "$max_x" = 'major' ]] && let "max_cap = $major_one + 1"
+		[[ "$max_x" = 'minor' ]] && let "max_cap = $minor_one + 1"
+	elif [[ $range_one = '~' ]]; then
+		:
+	else
+		if [[ "$major_one" = 'x' ]]; then
+			mod_x='major'
+			max_cap=0
+		elif [[ "$minor_one" = 'x' ]]; then
+			mod_x='minor'
+			let "max_cap = $major_one + 1"
+		elif [[ "$patch_one" = 'x' ]]; then
+			mod_x='patch'
+			let "max_cap = $patch_one + 1"
+		else
+			mod_x='equal'
+			max_cap=0
+		fi
+	fi
+
+	template_error 'semver_compare_mmp() | range_one: %1s | mod_x: %-5s | max_x: %-5s | max_cap: %d' "$range_one" "$mod_x" "$max_x" $max_cap
+	template_error 'semver_compare_mmp() | major_one: %-2s | minor_one: %-2s | patch_one: %-2s' $major_one $minor_one $patch_one
+	template_error 'semver_compare_mmp() | major_two: %-2s | minor_two: %-2s | patch_two: %-2s' $major_two $minor_two $patch_two
+
+	semver_compare_mmp_mod "$range_one" "$major_one" "$minor_one" "$patch_one" "$major_two" "$minor_two" "$patch_two" "$mod_x" "$max_x" $max_cap
+
+	return $?
+}
+
+
+semver_ranged_check()
+{
+	local -i exit_code=1
+	local semver_raw="$1"
+	local semver_clean="$(semver_clean_re "$semver_raw")"
+	local result=''
+
+	  if [[ "${semver_raw:0:1}" = '~' ]]; then
+		result='~'
+		exit_code=0
+	elif [[ "${semver_raw:0:1}" = '^' ]]; then
+		result='^'
+		exit_code=0
+	elif [[ "$semver_raw" =~ [xX*] ]]; then
+		result='x'
+		exit_code=0
+	elif [[ "$semver_clean" =~ $ONE_OR_TWO_POSITION_VER_RE ]]; then
+		result='t'
+		exit_code=0
+	fi
+
+	echo "$result"
+	return $exit_code
+}
+
+
+verimp::compare()
+{
+	verimp_error 'verimp::compare() ...'
+
+	local -i auto_match=1
+	local -i comp_match=1
+	local -i major_good=1
+	local -i minor_good=1
+	local -i patch_good=1
+	local -i prtag_good=1
+	local ver_one="$1"
+	local ver_two="$2"
+
+	local ver_one_range
+	local ver_one_ranged="$(semver_ranged_check "$ver_one")"
+	local ver_one_major
+	local ver_one_minor
+	local ver_one_patch
+	local ver_one_mmp
+	local ver_one_prtag
+	local ver_one_build
+
+	local ver_two_clean="$(semver_clean_re "$2")"
+	local ver_two_range
+	local ver_two_ranged="$(semver_ranged_check "$ver_two")"
+	local ver_two_major
+	local ver_two_minor
+	local ver_two_patch
+	local ver_two_mmp
+	local ver_two_prtag
+	local ver_two_build
+
+	# verimp_error "verimp::compare() | \$ver_two: '$ver_two' | \$ver_two_clean: '$ver_two_clean'"
+	# verimp_error "verimp::compare() | \$ver_one_ranged: '$ver_one_ranged' | \$ver_two_ranged: '$ver_two_ranged'"
+
+
+	if [[ "$ver_one_ranged" = '' ]] || [[ "$ver_two_ranged" != '' ]]; then
+		# verimp_error "verimp::compare() | \$ver_two: $ver_two == ranged"
+		ver_tmp="$ver_one"
 		ver_one="$ver_two"
 		ver_two="$ver_tmp"
+
+		var_tmp="$ver_one_ranged"
+		ver_one_ranged="$ver_two_ranged"
+		ver_two_ranged="$ver_tmp"
 	fi
 
-	# local regex='(^[^\d]|^)?(\dxX*)?(\.([\dxX*]+))?(\.([\dxX*]+))?[_+-]?(.*)'
+	ver_one="$(verimp::normalize "$ver_one")"
+	ver_two="$(verimp::normalize "$ver_two")"
 
-	if [[ "$ver_one" =~ $SEMVER_RE ]]; then
-		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[1]}: ${BASH_REMATCH[1]}"
-		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[2]}: ${BASH_REMATCH[2]}"
-		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[3]}: ${BASH_REMATCH[3]}"
-		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[4]}: ${BASH_REMATCH[4]}"
-		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[5]}: ${BASH_REMATCH[5]}"
-		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[6]}: ${BASH_REMATCH[6]}"
-		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[7]}: ${BASH_REMATCH[7]}"
-		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[8]}: ${BASH_REMATCH[8]}"
-		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[9]}: ${BASH_REMATCH[9]}"
-		# prefix_one="${BASH_REMATCH[1]}"
-		prefix_one="$(semver_clean "${BASH_REMATCH[1]}")"
-		major_one="$(semver_clean "${BASH_REMATCH[2]}")"
-		minor_one="$(semver_clean "${BASH_REMATCH[4]}")"
-		patch_one="$(semver_clean "${BASH_REMATCH[6]}")"
-		suffix_one="${BASH_REMATCH[7]}"
+	if [[ "$ver_one" =~ $SEMVER_NORMALIZE_RE ]]; then
+		ver_one_range="${BASH_REMATCH[1]}"  # SemVer Version denotation (v or V) or Range indicator (~ or ^). Optional
+		ver_one_major="${BASH_REMATCH[2]}"  # SemVer MMP Major Version. Mandatory
+		ver_one_minor="${BASH_REMATCH[4]}"  # SemVer MMP Minor Version. Mandatory
+		ver_one_patch="${BASH_REMATCH[6]}"  # SemVer MMP Patch Version. Mandatory
+		ver_one_mmp="${BASH_REMATCH[2]}.${BASH_REMATCH[4]}.${BASH_REMATCH[6]}"
+		ver_one_prtag="${BASH_REMATCH[8]}"  # SemVer 2.0.0 Prerelease Tag. Optional
+		ver_one_build="${BASH_REMATCH[10]}" # SemVer 2.0.0 Build. Ignore when comparing. Optional
+	fi
+	template_error 'verimp::compare() | $ver_one | range: %1s | MMP: %-8s | prerelease: %-5s | build: %s' "$ver_one_range" "$ver_one_mmp" "$ver_one_prtag" "$ver_one_build"
 
-		case "${BASH_REMATCH[2]}" in
-			[xX*])	[[ -z "$prefix_one" ]] && prefix_one="*"	;;
-		esac
-		case "${BASH_REMATCH[4]}" in
-			[xX*])	[[ -z "$prefix_one" ]] && prefix_one="^"	;;
-		esac
-		case "${BASH_REMATCH[6]}" in
-			[xX*])	[[ -z "$prefix_one" ]] && prefix_one="~"	;;
-		esac
+	if [[ "$ver_two" =~ $SEMVER_NORMALIZE_RE ]]; then
+		ver_two_range="${BASH_REMATCH[1]}"  # SemVer Version denotation (v or V) or Range indicator (~ or ^). Optional
+		ver_two_major="${BASH_REMATCH[2]}"  # SemVer MMP Major Version. Mandatory
+		ver_two_minor="${BASH_REMATCH[4]}"  # SemVer MMP Minor Version. Mandatory
+		ver_two_patch="${BASH_REMATCH[6]}"  # SemVer MMP Patch Version. Mandatory
+		ver_two_mmp="${BASH_REMATCH[2]}.${BASH_REMATCH[4]}.${BASH_REMATCH[6]}"
+		ver_two_prtag="${BASH_REMATCH[8]}"  # SemVer 2.0.0 Prerelease Tag. Optional
+		ver_two_build="${BASH_REMATCH[10]}" # SemVer 2.0.0 Build. Ignore when comparing. Optional
+	fi
+	template_error 'verimp::compare() | $ver_two | range: %1s | MMP: %-8s | prerelease: %-5s | build: %s' "$ver_two_range" "$ver_two_mmp" "$ver_two_prtag" "$ver_two_build"
 
-		# echo "\${BASH_REMATCH[1]}: ${BASH_REMATCH[1]} | \$prefix_one: $prefix_one"
-		printf '$prefix_one: %1s | $major_one: %2d | \$minor_one: %3d | \$patch_one: %3d | \$suffix_one: %s (%d)\n' "$prefix_one" "$major_one" "$minor_one" "$patch_one" "$suffix_one" "${#suffix_one}"
+	semver_compare_mmp "$ver_one_range" "$ver_one_major" "$ver_one_minor" "$ver_one_patch" "$ver_two_major" "$ver_two_minor" "$ver_two_patch"
+
+	if [[ $? = 0 ]]; then
+		echo "Good Match"
+		exit 0
+	else
+		echo "Bad Match"
+		exit 1
 	fi
 
-	if [[ "$ver_two" =~ $SEMVER_RE ]]; then
-		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[1]}: ${BASH_REMATCH[1]}"
-		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[2]}: ${BASH_REMATCH[2]}"
-		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[3]}: ${BASH_REMATCH[3]}"
-		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[4]}: ${BASH_REMATCH[4]}"
-		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[5]}: ${BASH_REMATCH[5]}"
-		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[6]}: ${BASH_REMATCH[6]}"
-		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[7]}: ${BASH_REMATCH[7]}"
-		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[8]}: ${BASH_REMATCH[8]}"
-		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[9]}: ${BASH_REMATCH[9]}"
-		# prefix_two="${BASH_REMATCH[1]}"
-		prefix_two="$(semver_clean "${BASH_REMATCH[1]}")"
-		major_two="$(semver_clean "${BASH_REMATCH[2]}")"
-		minor_two="$(semver_clean "${BASH_REMATCH[4]}")"
-		patch_two="$(semver_clean "${BASH_REMATCH[6]}")"
-		suffix_two="${BASH_REMATCH[7]}"
-		printf '$prefix_two: %1s | $major_two: %2d | \$minor_two: %3d | \$patch_two: %3d | \$suffix_two: %s (%d)\n' "$prefix_two" "$major_two" "$minor_two" "$patch_two" "$suffix_two" "${#suffix_two}"
-	fi
+	#
+	# Tilde Range:
+	# Allows the right most _specified_ of minor or patch (minor if neither specified)
+	# in the comparator to be increased any amount.
+	# This is capped by the second to right most (or major if major is right most) value + 1.
+	# Examples:
+	# ~1     allows for >= 1.0.0 < 2.0.0
+	# ~1.2   allows for >= 1.2.0 < 1.3.0
+	# ~1.2.3 allows for >= 1.2.3 < 1.3.0
+	# ~0.1   allows for >= 0.1.0 < 0.2.0
+	# ~0.1.2 allows for >= 0.1.2 < 0.2.0
+	# ~0.0.1 allows for >= 0.0.1 < 0.1.0
+	#
+	# mod_x = modified position
+	# max_x = capped position + 1
+	# 
+	# ~ Patch Range
+	# mod_x = patch
+	# max_x = minor + 1
+	#
+	# ~ Minor Range
+	# mod_x = minor
+	# max_x = major + 1
+	#
+	# mod_x = if minor is >= 0 then minor
+	# mod_x = if patch is >= 0 then patch
+	#
+	# max_x = if mod_x is minor then major
+	# max_x = if mod_x is patch then minor
+	#
+	# compare_mmp($mmp, mod_x, max_x)
+	#
+	#
+	#
+	#
+	#
+	#
+	#
+	#
+	# Caret Range:
+	# Allows modifications of minor or patch digits to the right of the left most non-zero digit.
+	# This is capped by the left most non-zero digit + 1.
+	# Examples:
+	# ^1     allows for >= 1.0.0 < 2.0.0
+	# ^1.2   allows for >= 1.2.0 < 2.0.0
+	# ^1.2.3 allows for >= 1.2.3 < 2.0.0
+	# ^0.1.2 allows for >= 0.1.2 < 0.2.0
+	#
+	#
+	# mod_x = if major is = 0 then minor
+	# mod_x = if mod_x = minor and minor is = 0 then patch
+	# mod_x = if mod_x = patch and patch is = 0 then no mod
+	#
+	#
+	#
+	#
+	#
+	#
+	#
+	#
+	if [[ "$ver_one_range" = '~' ]]; then
+		verimp_error "verimp::compare() | ~ Range"
+		verimp_error "verimp::compare() | \$ver_one_range: $ver_one_range | \$LINENO: $LINENO"
+		# ~1.2.x 1.2.3
+		# x ~ 3 | Automatic match. Next values should comparison match
+		#
+		# ~1.2.x 1.2.3
+		# 2 == 2 | Comparison match. Next values should exact match
+		#
+		# ~1.2.x 1.2.3
+		# 1 == 1 | Exact match. Complete match
+		######
+		# ~1.2.3 1.2.4
+		# 3 <= 4 | Comparison match. Next values should exact match
+		#
+		# ~1.2.3 1.2.4
+		# 2 == 2 | Exact match. Next values should exact match
+		#
+		# ~1.2.3 1.2.4
+		# 1 == 1 | Exact match. Complete match
+		#####
+		# ~1.3.3 3.2.1
+		# 3 > 1 | Comparison missmatch. Do no proceed
+		#####
+		# ~1.3.x 3.2.1
+		# x ~ 1 | Automatic match. Next values should comparison match
+		#
+		# ~1.3.x 3.2.1
+		# 2 < 3 | Comparison match. Next values should exact match 
+		#
+		# ~1.3.x 3.2.1
+		# 1 != 3 | Exact mismatch. Match failure
+		#####
+		# Comparison Match: auto or <=
+		# Exact Match: auto or ==
+		# Automatic Match: primary is 'x'
+		#
+		# if auto then auto or compare
+		# if compare then exact
 
-	case "$prefix_one" in
-		[xX] | '*')
-			# Version number is greater than 0.0.0
-			echo "Version number is greater than 0.0.0" 1>&2
-			if [[ $major_two -gt 0 ]] || [[ $minor_two -gt 0 ]] || [[ $patch_two -gt 0 ]]; then
-				return 0
+		semver_compare_mmp
+
+		verimp_error "verimp::compare() | \$ver_one_patch: $ver_one_patch"
+
+		if [[ "$ver_one_patch" = 'x' ]]; then
+			auto_match=0
+			patch_good=0
+		elif [[ $ver_one_patch -le $ver_two_patch ]]; then
+			# comp_match=0
+			patch_good=0
+		fi
+
+		if [[ $patch_good = 0 ]]; then
+			if [[ $auto_match = 0 ]]; then
+				if [[ "$ver_one_minor" = 'x' ]]; then
+					auto_match=0
+					# comp_match=1
+					minor_good=0
+				elif [[ $ver_one_minor -le $ver_two_minor ]]; then
+					auto_match=1
+					# comp_match=0
+					minor_good=0
+				fi
+			fi
+		fi
+
+		if [[ $minor_good = 0 ]]; then
+			if [[ $auto_match = 0 ]]; then
+				if [[ "$ver_one_major" = 'x' ]]; then
+					auto_match=0
+					major_good=0
+				elif [[ $ver_one_major -le $ver_two_major ]]; then
+					auto_match=1
+					major_good=0
+				fi
 			else
-				return 1
-			fi
-			;;
-		'^')
-			# Major version match and minor version equal to or greater than
-			echo "Major version match and minor version equal to or greater than" 1>&2
-			if [[ $major_one -eq $major_two ]]; then
-				if [[ $minor_one -le $minor_two ]]; then
-					return 0
+				if [[ $ver_one_major -eq $ver_two_major ]]; then
+					auto_match=1
+					major_good=0
 				fi
 			fi
-			;;
-		'~')
-			# Major and minor version match, patch version greater than, or patch equal
-			# and suffix (pre-release tag) greater than or equal to.
-			echo "Major and minor version match, patch version greater..." 1>&2
-			if [[ $major_one -eq $major_two ]]; then
-				if [[ $minor_one -eq $minor_two ]]; then
-					if [[ $patch_one -lt $patch_two ]]; then
-						return 0
-					elif [[ $patch_one -eq $patch_two ]]; then
-						compare_suffix "$suffix_one" "$suffix_two"
-						result=$?
-						# echo "compare_versions() | compare_suffix: $result" 1>&2
-						return $result
-					else
-						return 1
-					fi
+		fi
+	elif [[ "$ver_one_range" = '^' ]]; then
+		verimp_error "verimp::compare() | ^ Range"
+	else
+		verimp_error "verimp::compare() | No Range"
+
+		verimp_error "verimp::compare() | \${ver_1[patch]}: $ver_one_patch | \$ver_two_patch: $ver_two_patch"
+
+		if [[ "$ver_one_patch" = 'x' ]]; then
+			auto_match=0
+			patch_good=0
+		elif [[ $ver_one_patch -le $ver_two_patch ]]; then
+			# comp_match=0
+			patch_good=0
+		fi
+
+		verimp_error "verimp::compare() | \$auto_match: $auto_match | \$patch_good: $patch_good"
+
+		if [[ $patch_good = 0 ]]; then
+			if [[ $auto_match = 0 ]]; then
+				if [[ "$ver_one_minor" = 'x' ]]; then
+					auto_match=0
+					# comp_match=1
+					minor_good=0
+				elif [[ $ver_one_minor -le $ver_two_minor ]]; then
+					auto_match=1
+					# comp_match=0
+					minor_good=0
+				fi
+			else
+				if [[ $ver_one_minor -eq $ver_two_minor ]]; then
+					auto_match=1
+					minor_good=0
 				fi
 			fi
-			return 1
-			;;
-		'')
-			# Exact version number match
-			echo "Exact version number match" 1>&2
-			if [[ $major_one -eq $major_two ]]; then
-				if [[ $minor_one -eq $minor_two ]]; then
-					if [[ $patch_one -eq $patch_two ]]; then
-						if [[ $suffix_one = $suffix_two ]]; then
-							return 0
-						fi
-					fi
+		fi
+
+		verimp_error "verimp::compare() | \$auto_match: $auto_match | \$minor_good: $minor_good"
+
+		if [[ $minor_good = 0 ]]; then
+			if [[ $auto_match = 0 ]]; then
+				if [[ "$ver_one_major" = 'x' ]]; then
+					major_good=0
+				elif [[ $ver_one_major -le $ver_two_major ]]; then
+					major_good=0
+				fi
+			else
+				if [[ $ver_one_major -eq $ver_two_major ]]; then
+					auto_match=1
+					major_good=0
 				fi
 			fi
-			return 1
-			;;
-		*)
-			echo "  Unknown prefix $prefix_one" 1>&2
-			return 2
-			;;
-	esac
+		fi
+
+		verimp_error "verimp::compare() | \$auto_match: $auto_match | \$major_good: $major_good"
+	fi
+
+	# verimp_error "verimp::compare() | \$major_good: $major_good | \$minor_good: $minor_good | \$patch_good: $patch_good"
+
+	if [[ $major_good = 0 ]] && [[ $minor_good = 0 ]] && [[ $patch_good = 0 ]]; then
+		verimp_error 'MMD Match!'
+
+		if [[ "x$ver_one_prtagx" != 'xx' ]] && [[ "x${ver_two_prtag}x" != 'xx' ]]; then
+			verimp_error 'Compare prerelease tags'
+		fi
+	else
+		verimp_error 'MMD Mismatch!'
+	fi
+
 	if [[ "$ver_two" = "$ver_tmp" ]]; then
 		ver_tmp="$ver_one"
 		ver_one="$ver_two"
 		ver_two="$ver_tmp"
+
+		var_tmp="$ver_one_ranged"
+		ver_one_ranged="$ver_two_ranged"
+		ver_two_ranged="$ver_tmp"
 	fi
 }
 
 
-semver_clean()
+verimp_error()
 {
-	local char=''
-	local -i major
-	local -i minor
-	local -i patch
-	local value="$1"
-	local result
+	echo "  $1" 1>&2
+	if [[ "x$2" != "x" ]]; then
+		exit $2
+	fi
+}
 
-	# echo "semver_clean() | \$value: $value" 1>&2
 
-	if [[ ${#value} -eq 0 ]]; then
-		result=''
-	elif [[ ${#value} -eq 1 ]]; then
-		case $value in
-			[0-9])  result=$value  ;;
-			[vV=])  result=''      ;;
-			*)      result=0       ;;
-		esac
-	else
-		if [[ "$ver_one" =~ $SEMVER_RE ]]; then
-			major="$(semver_clean "${BASH_REMATCH[2]}")"
-			minor="$(semver_clean "${BASH_REMATCH[3]}")"
-			patch="$(semver_clean "${BASH_REMATCH[5]}")"
-			result="${major}.${minor}.${patch}"
-		fi
+verimp::normalize()
+{
+	local build
+	local major
+	local minor
+	local patch
+	local prtag
+	local range=''
+	local ranged=''
+	local result=''
+	local input="$1"
+
+	if [[ "$input" =~ $SEMVER_NORMALIZE_RE ]]; then
+		# echo "\${BASH_REMATCH[6]}: ${BASH_REMATCH[6]}" 1>&2
+		# echo "\${BASH_REMATCH[7]}: ${BASH_REMATCH[7]}" 1>&2
+		# echo "\${BASH_REMATCH[8]}: ${BASH_REMATCH[8]}" 1>&2
+		# echo "\${BASH_REMATCH[9]}: ${BASH_REMATCH[9]}" 1>&2
+		# echo "\${BASH_REMATCH[10]}: ${BASH_REMATCH[10]}" 1>&2
+		range="${BASH_REMATCH[1]}"  # SemVer Version denotation (v or V) or Range indicator (~ or ^). Optional
+		major="${BASH_REMATCH[2]}"  # SemVer MMP Major Version. Mandatory
+		minor="${BASH_REMATCH[4]}"  # SemVer MMP Minor Version. Mandatory
+		patch="${BASH_REMATCH[6]}"  # SemVer MMP Patch Version. Mandatory
+		prtag="${BASH_REMATCH[8]}"  # SemVer 2.0.0 Prerelease Tag. Optional
+		build="${BASH_REMATCH[10]}" # SemVer 2.0.0 Build. Ignore when comparing. Optional
+
+		ranged="$(semver_ranger "$range" "$major" "$minor" "$patch")"
 	fi
 
-	# echo "semver_clean() | \$value: $value | \$result: $result" 1>&2
+	# echo "verimp::normalize() INPUT | \$input: $input" 1>&2
+	# echo "verimp::normalize() | \$major: $major | \$minor: $minor | \$patch: $patch | \$prtag: $prtag | \$build: $build" 1>&2
+	
+	result="${ranged}"
+	[[ "x${prtag}x" != 'xx' ]] && result="${result}-${prtag}"
+	[[ "x${build}x" != 'xx' ]] && result="${result}+${build}"
+
+	# echo "verimp::normalize() | \$input: $input | \$ranged: $ranged | \$result: $result" 1>&2
+	verimp_error "$(printf 'verimp::normalize() | $input: %-8s | $ranged: %-8s | $result: %-8s\n' $input $ranged $result)"
+
 	printf '%s' "$result"
 }
 
-if [[ "x${ver_one}x" != "xx" ]] && [[ "x${ver_two}x" != "xx" ]]; then
-	compare_versions
-else
+# echo "\$ver_one: $ver_one"
+# if [[ "x${ver_one}x" != "xx" ]] && [[ "x${ver_two}x" != "xx" ]]; then
+
+if [[ $# -eq 0 ]]; then
 	echo "  Usage: $APP_FILE ~1.2.3 1.2" 1>&2
 	exit 2
+elif [[ $# -eq 2 ]]; then
+	case "$1" in
+		normalize)  echo "$(verimp::normalize "$2")"    ;;
+		clean)      echo "$(semver_clean_re "$2")"      ;;
+		*)          echo "$(verimp::compare "$1" "$2")" ;;
+	esac
+else
+	case "$1" in
+		-h | -help | --help)
+			echo "  Usage: $APP_FILE ~1.2.3 1.2"
+			exit 0
+			;;
+		*)
+			echo "  Unknown command: $1"
+			exit 2
+			;;
+	esac
 fi
-
