@@ -1,0 +1,290 @@
+#!/usr/bin/env bash
+###################
+# VerImp
+#
+# Semantic Versioning number comparison script that can handle common package manager syntax.
+#
+#####
+# Exit Codes:
+# -----------
+# 0 = The versions are compatible
+# 1 = The versions are not compatible
+# 2 = Invalid arguments
+#
+#####
+# ChangeLog:
+# ----------
+# 2016-05-10  0.0.1      Initial script creation.
+#
+#
+
+APP_AUTHOR_NAME="RuneImp"
+APP_AUTHOR_MAIL="runeimp@gmail.com"
+APP_NAME="VerImp"
+APP_FILE="verimp"
+APP_VERSION="0.0.1"
+APP_LICENSES="http://opensource.org/licenses/MIT"
+APP_LABEL="${APP_AUTHOR_NAME}'s $APP_NAME v$APP_VERSION
+License(s): $APP_LICENSES"
+
+# SEMVER_RE='([~xX*^]?)([0-9]*)\.([0-9Xx\*]+)(\.([0-9Xx*]+))?[_-]?(.*)'
+# SEMVER_RE='(.?)([0-9]+)\.([0-9Xx\*]+)(\.([0-9Xx*]+))?[_-]?(.*)'
+# SEMVER_RE='(.)?([0-9]+)?(\.([0-9]+))?(\.([0-9]+))?[_-]?(.*)'
+# SEMVER_RE='(\x)([0-9]+)\.([0-9Xx\*]+)(\.([0-9Xx*]+))(.*)'
+# SEMVER_RE='(^[^\d]|^)?(\dxX*)?(\.([\dxX*]+))?(\.([\dxX*]+))?[_+-]?(.*)'
+# SEMVER_RE='(^[xXvV~*^]|^)?(\dxX*)?(\.([\dxX*]+))?(\.([\dxX*]+))?[_+-]?(.*)'
+SEMVER_RE='(^[xXvV~*^]|^)?([0-9xX*]*)(\.([0-9xX*]+))?(\.([0-9xX*]+))?[_+-]?(.*)'
+
+ver_one="$1"
+ver_two="$2"
+
+# echo "\$ver_one: $ver_one | \${ver_one:0:1}: ${ver_one:0:1}"
+# echo "\$ver_two: $ver_two | \${ver_two:0:1}: ${ver_two:0:1}"
+
+
+compare_suffix()
+{
+	local suffix_one="$1"
+	local suffix_two="$2"
+	local char_one="$1"
+	local char_two="$2"
+	local chunk_one="$1"
+	local chunk_two="$2"
+
+	echo "compare_suffix_one() | \$suffix_one: $suffix_one | \$suffix_two: $suffix_two" 1>&2
+
+	if [[ -z "$suffix_one" ]] && [[ -z "$suffix_two" ]]; then
+		return 0
+	elif [[ "x${suffix_one}x" = "x${suffix_two}x" ]]; then
+		return 0
+	elif [[ ! -z "$suffix_one" ]] && [[ -z "$suffix_two" ]]; then
+		return 0
+	elif [[ ! -z "$suffix_one" ]] && [[ ! -z "$suffix_two" ]]; then
+
+		until [[ ${#suffix_one} = 0 ]] && [[ ${#suffix_two} = 0 ]]; do
+			chunk_one="${suffix_one%%.*}"
+			chunk_two="${suffix_two%%.*}"
+
+			if [[ ${#chunk_one} = 0 ]] && [[ ${#suffix_one} -gt 0 ]]; then
+				chunk_one="$suffix_one"
+			else
+				suffix_one="${suffix_one#$chunk_one}"
+			fi
+			if [[ ${#chunk_two} = 0 ]] && [[ ${#suffix_two} -gt 0 ]]; then
+				chunk_two="$suffix_two"
+			else
+				suffix_two="${suffix_two#$chunk_two}"
+			fi
+
+			[[ "${suffix_one:0:1}" = '.' ]] && suffix_one="${suffix_one:1}"
+			[[ "${suffix_two:0:1}" = '.' ]] && suffix_two="${suffix_two:1}"
+
+			printf "compare_suffix_one() | \$chunk_one: %8s | \$suffix_one: %s\n" "$chunk_one" "$suffix_one" 1>&2
+			printf "compare_suffix_one() | \$chunk_two: %8s | \$suffix_two: %s\n" "$chunk_two" "$suffix_two" 1>&2
+
+			#
+			# Empty chunks rate higher than non-empty
+			#
+			if [[ ! -z "$chunk_one" ]] && [[ -z "$chunk_two" ]]; then
+				return 0
+			elif [[ -z "$chunk_one" ]] && [[ ! -z "$chunk_two" ]]; then
+				return 1
+			else
+				if [[ "$chunk_one" < "$chunk_two" ]]; then
+					# echo "compare_suffix_one() | $chunk_one is > $chunk_two"
+					return 0
+				elif [[ "$chunk_one" > "$chunk_two" ]]; then
+					# echo "compare_suffix_one() | $chunk_one is > $chunk_two"
+					return 1
+				fi
+			fi
+		done
+
+		return 1
+	else
+		return 1
+	fi
+}
+
+
+compare_versions()
+{
+	echo "compare_versions() | \$ver_one: $ver_one | \$ver_two: $ver_two"
+
+	local ver_tmp="$ver_one"
+	local result
+
+	local prefix_one
+	local -i major_one
+	local -i minor_one
+	local -i patch_one
+	local suffix_one
+	
+	local prefix_two
+	local -i major_two
+	local -i minor_two
+	local -i patch_two
+	local suffix_two
+
+	if [[ "${ver_two:0:1}" = '~' ]]; then
+		ver_one="$ver_two"
+		ver_two="$ver_tmp"
+	fi
+
+	# local regex='(^[^\d]|^)?(\dxX*)?(\.([\dxX*]+))?(\.([\dxX*]+))?[_+-]?(.*)'
+
+	if [[ "$ver_one" =~ $SEMVER_RE ]]; then
+		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[1]}: ${BASH_REMATCH[1]}"
+		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[2]}: ${BASH_REMATCH[2]}"
+		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[3]}: ${BASH_REMATCH[3]}"
+		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[4]}: ${BASH_REMATCH[4]}"
+		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[5]}: ${BASH_REMATCH[5]}"
+		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[6]}: ${BASH_REMATCH[6]}"
+		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[7]}: ${BASH_REMATCH[7]}"
+		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[8]}: ${BASH_REMATCH[8]}"
+		# echo "compare_versions() \$ver_one | \${BASH_REMATCH[9]}: ${BASH_REMATCH[9]}"
+		# prefix_one="${BASH_REMATCH[1]}"
+		prefix_one="$(semver_clean "${BASH_REMATCH[1]}")"
+		major_one="$(semver_clean "${BASH_REMATCH[2]}")"
+		minor_one="$(semver_clean "${BASH_REMATCH[4]}")"
+		patch_one="$(semver_clean "${BASH_REMATCH[6]}")"
+		suffix_one="${BASH_REMATCH[7]}"
+
+		case "${BASH_REMATCH[2]}" in
+			[xX*])	[[ -z "$prefix_one" ]] && prefix_one="*"	;;
+		esac
+		case "${BASH_REMATCH[4]}" in
+			[xX*])	[[ -z "$prefix_one" ]] && prefix_one="^"	;;
+		esac
+		case "${BASH_REMATCH[6]}" in
+			[xX*])	[[ -z "$prefix_one" ]] && prefix_one="~"	;;
+		esac
+
+		# echo "\${BASH_REMATCH[1]}: ${BASH_REMATCH[1]} | \$prefix_one: $prefix_one"
+		printf '$prefix_one: %1s | $major_one: %2d | \$minor_one: %3d | \$patch_one: %3d | \$suffix_one: %s (%d)\n' "$prefix_one" "$major_one" "$minor_one" "$patch_one" "$suffix_one" "${#suffix_one}"
+	fi
+
+	if [[ "$ver_two" =~ $SEMVER_RE ]]; then
+		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[1]}: ${BASH_REMATCH[1]}"
+		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[2]}: ${BASH_REMATCH[2]}"
+		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[3]}: ${BASH_REMATCH[3]}"
+		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[4]}: ${BASH_REMATCH[4]}"
+		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[5]}: ${BASH_REMATCH[5]}"
+		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[6]}: ${BASH_REMATCH[6]}"
+		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[7]}: ${BASH_REMATCH[7]}"
+		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[8]}: ${BASH_REMATCH[8]}"
+		# echo "compare_versions() \$ver_two | \${BASH_REMATCH[9]}: ${BASH_REMATCH[9]}"
+		# prefix_two="${BASH_REMATCH[1]}"
+		prefix_two="$(semver_clean "${BASH_REMATCH[1]}")"
+		major_two="$(semver_clean "${BASH_REMATCH[2]}")"
+		minor_two="$(semver_clean "${BASH_REMATCH[4]}")"
+		patch_two="$(semver_clean "${BASH_REMATCH[6]}")"
+		suffix_two="${BASH_REMATCH[7]}"
+		printf '$prefix_two: %1s | $major_two: %2d | \$minor_two: %3d | \$patch_two: %3d | \$suffix_two: %s (%d)\n' "$prefix_two" "$major_two" "$minor_two" "$patch_two" "$suffix_two" "${#suffix_two}"
+	fi
+
+	case "$prefix_one" in
+		[xX] | '*')
+			# Version number is greater than 0.0.0
+			echo "Version number is greater than 0.0.0" 1>&2
+			if [[ $major_two -gt 0 ]] || [[ $minor_two -gt 0 ]] || [[ $patch_two -gt 0 ]]; then
+				return 0
+			else
+				return 1
+			fi
+			;;
+		'^')
+			# Major version match and minor version equal to or greater than
+			echo "Major version match and minor version equal to or greater than" 1>&2
+			if [[ $major_one -eq $major_two ]]; then
+				if [[ $minor_one -le $minor_two ]]; then
+					return 0
+				fi
+			fi
+			;;
+		'~')
+			# Major and minor version match, patch version greater than, or patch equal
+			# and suffix (pre-release tag) greater than or equal to.
+			echo "Major and minor version match, patch version greater..." 1>&2
+			if [[ $major_one -eq $major_two ]]; then
+				if [[ $minor_one -eq $minor_two ]]; then
+					if [[ $patch_one -lt $patch_two ]]; then
+						return 0
+					elif [[ $patch_one -eq $patch_two ]]; then
+						compare_suffix "$suffix_one" "$suffix_two"
+						result=$?
+						# echo "compare_versions() | compare_suffix: $result" 1>&2
+						return $result
+					else
+						return 1
+					fi
+				fi
+			fi
+			return 1
+			;;
+		'')
+			# Exact version number match
+			echo "Exact version number match" 1>&2
+			if [[ $major_one -eq $major_two ]]; then
+				if [[ $minor_one -eq $minor_two ]]; then
+					if [[ $patch_one -eq $patch_two ]]; then
+						if [[ $suffix_one = $suffix_two ]]; then
+							return 0
+						fi
+					fi
+				fi
+			fi
+			return 1
+			;;
+		*)
+			echo "  Unknown prefix $prefix_one" 1>&2
+			return 2
+			;;
+	esac
+	if [[ "$ver_two" = "$ver_tmp" ]]; then
+		ver_tmp="$ver_one"
+		ver_one="$ver_two"
+		ver_two="$ver_tmp"
+	fi
+}
+
+
+semver_clean()
+{
+	local char=''
+	local -i major
+	local -i minor
+	local -i patch
+	local value="$1"
+	local result
+
+	# echo "semver_clean() | \$value: $value" 1>&2
+
+	if [[ ${#value} -eq 0 ]]; then
+		result=''
+	elif [[ ${#value} -eq 1 ]]; then
+		case $value in
+			[0-9])  result=$value  ;;
+			[vV=])  result=''      ;;
+			*)      result=0       ;;
+		esac
+	else
+		if [[ "$ver_one" =~ $SEMVER_RE ]]; then
+			major="$(semver_clean "${BASH_REMATCH[2]}")"
+			minor="$(semver_clean "${BASH_REMATCH[3]}")"
+			patch="$(semver_clean "${BASH_REMATCH[5]}")"
+			result="${major}.${minor}.${patch}"
+		fi
+	fi
+
+	# echo "semver_clean() | \$value: $value | \$result: $result" 1>&2
+	printf '%s' "$result"
+}
+
+if [[ "x${ver_one}x" != "xx" ]] && [[ "x${ver_two}x" != "xx" ]]; then
+	compare_versions
+else
+	echo "  Usage: $APP_FILE ~1.2.3 1.2" 1>&2
+	exit 2
+fi
+
