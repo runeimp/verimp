@@ -19,6 +19,7 @@
 #####
 # ChangeLog:
 # ----------
+# 2016-05-18  0.1.1      Resolving minor bugs.
 # 2016-05-11  0.1.0      Finally realized the better way.
 # 2016-05-10  0.0.2      Radical logic changes.
 # 2016-05-10  0.0.1      Initial script creation.
@@ -29,14 +30,14 @@ APP_AUTHOR_NAME="RuneImp"
 APP_AUTHOR_MAIL="runeimp@gmail.com"
 APP_NAME="VerImp"
 APP_FILE="verimp"
-APP_VERSION="0.1.0"
+APP_VERSION="0.1.1"
 APP_LICENSES="http://opensource.org/licenses/MIT"
 APP_LABEL="${APP_AUTHOR_NAME}'s $APP_NAME v$APP_VERSION
 License(s): $APP_LICENSES"
 
 
 #
-# CONSTANTS (theoretical)
+# CONSTANTS (theoreticaly speaking)
 #
 
 # SemVer MMP (Major.Minor.Patch) RegEx
@@ -60,6 +61,7 @@ ONE_OR_TWO_POSITION_VER_RE='^[0-9]+(\.[0-9]+)?$'
 #
 # VARIABLES
 #
+
 
 
 #
@@ -86,6 +88,8 @@ semver_clean_args()
 
 semver_clean_re()
 {
+	local -i debug=1
+
 	local clean=''
 	local -i major
 	local -i minor
@@ -93,11 +97,13 @@ semver_clean_re()
 	local temp=''
 
 	if [[ "$1" =~ $SEMVER_MMP_RE ]]; then
-		# local len=${#BASH_REMATCH[@]}
-		# let "len -= 1"
-		# for i in $(seq 1 $len); do
-		# 	verimp_error "semver_clean_re() | \${BASH_REMATCH[$i]}: '${BASH_REMATCH[$i]}'"
-		# done
+		if [[ $debug = 0 ]]; then
+			local len=${#BASH_REMATCH[@]}
+			let "len -= 1"
+			for i in $(seq 1 $len); do
+				verimp_error "semver_clean_re() | \${BASH_REMATCH[$i]}: '${BASH_REMATCH[$i]}'"
+			done
+		fi
 		
 		temp="${BASH_REMATCH[1]}"
 		[[ "x${temp}x" != 'xx' ]] && clean=$temp || clean=0.0.0
@@ -109,7 +115,8 @@ semver_clean_re()
 		[[ "x${temp}x" != 'xx' ]] && patch=$temp || patch=0
 
 		[[ "$clean" == '0.0.0' ]] && clean="${major}.${minor}.${patch}"
-		# verimp_error "semver_clean_re() | MMP: '${major}.${minor}.${patch}' | clean: $clean"
+
+		[[ $debug = 0 ]] && verimp_error "semver_clean_re() | MMP: '${major}.${minor}.${patch}' | clean: $clean"
 	fi
 
 	printf '%s' "$clean"
@@ -118,12 +125,15 @@ semver_clean_re()
 
 semver_normalize_x()
 {
+	local -i debug=1
+
 	local result="$1"
+	local x_zero="${2:-x}"
 
 	case "$1" in
-		[X*] | '')	result='x'	;;
+		[xX*] | '')	result="$x_zero"	;;
 	esac
-	# verimp_error "$(printf "semver_normalize_x() | input: %-3s | output: %-3s" "'$1'" "'$result'")"
+	[[ $debug = 0 ]] && verimp_error "$(printf "semver_normalize_x() | input: %-3s | output: %-3s" "'$1'" "'$result'")"
 
 	printf '%s' "$result"
 }
@@ -131,71 +141,19 @@ semver_normalize_x()
 
 semver_ranger()
 {
+	local -i debug=1
+
 	local range="$1"
-	local major="$(semver_normalize_x "$2")"
-	local minor="$(semver_normalize_x "$3")"
-	local patch="$(semver_normalize_x "$4")"
+	local major="$(semver_normalize_x "$2" "$5")"
+	local minor="$(semver_normalize_x "$3" "$5")"
+	local patch="$(semver_normalize_x "$4" "$5")"
 	local result=''
 
-	# echo "semver_ranger() | \$range: $range | \$major: $major | \$minor: $minor | \$patch: $patch" 1>&2
+	[[ $debug -eq 0 ]] && verimp_error "semver_ranger() | \$range: $range | \$major: $major | \$minor: $minor | \$patch: $patch"
 
-	if [[ "$range" = '~' ]]; then
-		# Note: y is the actual value that matches [0-9]+ or [1-9][0-9]*
-		# ~ = x.x.x
-		# ~1 = 1.x.x
-		# ~1.x = 1.x.x
-		# ~1\.[0-9]+ = 1.y.x
-		# ~1\.[0-9]+\.0 = 1.y.x
-		# ~1\.[0-9]+\.[1-9][0-9]* = ~1.0.y
-
-		#
-		# If it is a number and not X or an empty string
-		if [[ $major -ge 0 ]] && [[ "$major" != 'x' ]]; then
-			if [[ $minor -ge 0 ]] && [[ "$major" != 'x' ]]; then
-				if [[ $patch -gt 0 ]]; then
-					: # Nada
-				else # Patch is 0, 'x', or empty
-					patch='x'
-					# range=''
-				fi
-			else # Minor is 'x' or empty
-				minor='x'
-				patch='x'
-				range=''
-			fi
-		else # Major is 'x' or empty
-			major=0
-			minor='x'
-			patch='x'
-			range=''
-		fi
-	elif [[ "$range" = '^' ]]; then
-		# Note: y (minor) and x (patch) is the actual value that matches [0-9]+ or [1-9][0-9]*
-		# ^[1+] = 1.x.x
-		# ^[1+].[0-9x] = 1.x.x
-		# ^[1+].[0-9x] = 1.x.x
-		# ^[1+].[0-9x].[0-9x] = 1.x.x
-		# ^0.[1+] = 0.1.x
-		# ^0.[1+].[0-9x] = 0.1.x
-
-		if [[ $major -gt 0 ]]; then
-			minor='x'
-			patch='x'
-			range=''
-		elif [[ $major -eq 0 ]] &&  [[ $major != 'x' ]]; then
-			[[ $minor -gt 0 ]] && patch='x'
-			range=''
-		else # Major is x or empty
-			major=0
-			minor=0
-			patch=0
-			range=''
-		fi
-
-	fi
 	result="${range}${major}.${minor}.${patch}"
 
-	# echo "semver_ranger() | \$result: $result" 1>&2
+	[[ $debug -eq 0 ]] && verimp_error "semver_ranger() | \$result: $result"
 	printf '%s' "$result"
 }
 
@@ -218,50 +176,73 @@ semver_ranger()
 #
 semver_compare_mmp_mod()
 {
+	local -i debug=1
+
 	local major_one="$1"; shift
 	local minor_one="$1"; shift
 	local patch_one="$1"; shift
 	local major_two="$1"; shift
 	local minor_two="$1"; shift
 	local patch_two="$1"; shift
-	local mod_x="$1"; shift
-	local max_x="$1"; shift
-	local -i max_cap=$1
+	local mod_x="$1";
+	local -i max_cap=0
 	local result=2
 
-	template_error 'semver_compare_mmp_mod() | mod_x: %-7s | max_x: %-6s | max_cap: %-3d' "$range_one" "$mod_x" "$max_x" $max_cap
-	template_error 'semver_compare_mmp_mod() | major_one: %-3s | minor_one: %-3s | patch_one: %-3s' "$major_one" "$minor_one" "$patch_one"
-	template_error 'semver_compare_mmp_mod() | major_two: %-3s | minor_two: %-3s | patch_two: %-3s' "$major_two" "$minor_two" "$patch_two"
+	if [[ $debug -eq 0 ]]; then
+		template_error 'semver_compare_mmp_mod() | mod_x: %-7s' "$range_one" "$mod_x"
+		template_error 'semver_compare_mmp_mod() | major_one: %-3s | minor_one: %-3s | patch_one: %-3s' "$major_one" "$minor_one" "$patch_one"
+		template_error 'semver_compare_mmp_mod() | major_two: %-3s | minor_two: %-3s | patch_two: %-3s' "$major_two" "$minor_two" "$patch_two"
+	fi
 
+	#
+	# Testing for a good '0' result
+	#
 	if [[ "$mod_x" = 'major' ]]; then
-		if [[ $major_one -le $major_two ]] && [[ $major_two -lt $max_cap ]] || [[ "$major_one" = 'x' ]]; then
-			result=0
+		if [[ "$major_one" = 'x' ]]; then
+			result=1
+		else
+			result=2
 		fi
 	elif [[ "$mod_x" = 'minor' ]]; then
-		if [[ $minor_one -le $minor_two ]] || [[ "$minor_one" = 'x' ]]; then
-			let "max_cap = $major_one + 1"
-			if [[ $major_one -eq $major_two ]]; then
-				result=0
+		if [[ $major_one -eq $major_two ]]; then
+			if [[ $minor_one -eq $minor_two ]] && [[ "$minor_one" != 'x' ]]; then
+				if [[ $patch_one -eq $patch_two ]]; then
+					result=0
+				elif [[ $patch_one -le $patch_two ]]; then
+					result=1
+				else
+					result=2
+				fi
+			elif [[ $minor_one -lt $minor_two ]] || [[ "$minor_one" = 'x' ]]; then
+				result=1
+			else
+				result=2
 			fi
 		fi
 	elif [[ "$mod_x" = 'patch' ]]; then
-		if [[ $patch_one -le $patch_one ]] || [[ "$patch_one" = 'x' ]]; then
-			let "max_cap = $minor_one + 1"
-			if [[ $minor_one -eq $minor_two ]]; then
-				if [[ $major_one -eq $major_two ]]; then
-					result=0
-				fi
+		if [[ $major_one -eq $major_two ]] && [[ $minor_one -eq $minor_two ]]; then
+			if [[ $patch_one -eq $patch_two ]] && [[ "$patch_one" != 'x' ]]; then
+				result=0
+			elif [[ $patch_one -lt $patch_two ]] || [[ "$patch_one" = 'x' ]]; then
+				result=1
+			else
+				result=2
 			fi
 		fi
 	elif [[ "$mod_x" = 'equal' ]]; then
 		if [[ $major_one -eq $major_two ]] && [[ $minor_one -eq $minor_two ]] && [[ $patch_one -eq $patch_two ]]; then
 			result=0
+		else
+			result=2
 		fi
+	else
+		template_error 'Unknown value for mod_x: %-7s' "$mod_x"
 	fi
-	template_error 'semver_compare_mmp_mod() | mod_x: %-7s | max_x: %-7s | max_cap: %-4d | result: %d' "$mod_x" "$max_x" $max_cap $result
+
+	[[ $debug -eq 0 ]] && template_error 'semver_compare_mmp_mod() | mod_x: %-7s | result: %d' "$mod_x" $result
 
 	#
-	# Test Equality
+	# Test if good result was for Equality or Match
 	#
 	if [[ $result -eq 0 ]]; then
 		if [[ $major_one -eq $major_two ]] && [[ $minor_one -eq $minor_two ]] || [[ $patch_one -eq $patch_two ]]; then
@@ -271,19 +252,30 @@ semver_compare_mmp_mod()
 		fi
 	fi
 
-	verimp_error "semver_compare_mmp_mod() | \$result: $result"
+	[[ $debug -eq 0 ]] &&  verimp_error "semver_compare_mmp_mod() | \$result: $result"
 
 	return $result
 }
+
+###
+# semver_compare_mmp()
 #
-# mod_x = if minor is >= 0 then minor
-# mod_x = if patch is >= 0 then patch
+# Compares the Major, Minor, and Patch version numbers.
 #
-# max_x = if mod_x is minor then major
-# max_x = if mod_x is patch then minor
+# @param	range_one	The range indicator
+# @param	major_one	1st version major number
+# @param	minor_one	1st version minor number
+# @param	patch_one	1st version patch number
+# @param	major_two	2nd version major number
+# @param	minor_two	2nd version minor number
+# @param	patch_two	2nd version patch number
+#
+# @return	digit	0: equality, 1: match, 2: mismatch
 #
 semver_compare_mmp()
 {
+	local -i debug=1
+
 	local -i int_parse
 	local range_one="$1"
 	local major_one="$2"
@@ -293,11 +285,10 @@ semver_compare_mmp()
 	local -i minor_two="$6"
 	local -i patch_two="$7"
 	local mod_x=''
-	local max_x=''
-	local -i max_cap=0
 	local -i result_code=0
 
 	if [[ $range_one = '~' ]]; then
+		# Tilde Range
 		#
 		# Examples:
 		# ~1     allows for >= 1.0.0 < 2.0.0
@@ -311,26 +302,17 @@ semver_compare_mmp()
 		# mod_x = if minor is >= 0 then minor
 		# mod_x = if patch is >= 0 then patch
 		#
-		# max_x = if mod_x is minor then major
-		# max_x = if mod_x is patch then minor
+		# Digit if defined
 		#
-		max_x='major'
-		mod_x='major'
+
+		mod_x='minor'
 
 		if [[ $minor_one -ge 0 ]] && [[ $minor_one != 'x' ]]; then
-			mod_x='minor'
-		fi
-
-		if [[ $patch_one -ge 0 ]] && [[ $patch_one != 'x' ]]; then
 			mod_x='patch'
 		fi
 
-		[[ "$mod_x" = 'minor' ]] && max_x='major'
-		[[ "$mod_x" = 'patch' ]] && max_x='minor'
-
-		[[ "$max_x" = 'major' ]] && let "max_cap = $major_one + 1"
-		[[ "$max_x" = 'minor' ]] && let "max_cap = $minor_one + 1"
 	elif [[ $range_one = '^' ]]; then
+		# Caret Range
 		#
 		# Examples:
 		# ^1     allows for >= 1.0.0 < 2.0.0
@@ -342,71 +324,113 @@ semver_compare_mmp()
 		# mod_x = if mod_x = minor and minor is = 0 then patch
 		# mod_x = if mod_x = patch and patch is = 0 then equal
 		#
-		mod_x='major'
-		max_cap=0
+		# Digit not zero
+		#
 
-		if [[ $major_one -eq 0 ]] && [[ $major_one != 'x' ]]; then
-			mod_x='minor'
-			let "max_cap = $minor_one + 1"
-		fi
+		mod_x='minor'
 
-		if [[ "$mod_x" = 'minor' ]] && [[ $minor_one -eq 0 ]] && [[ $minor_one != 'x' ]]; then
+		if [[ $major_one -eq 0 ]]; then
 			mod_x='patch'
+			if [[ $minor_one -eq 0 ]] && [[ $minor_one != 'x' ]]; then
+				mod_x='equal'
+			fi
 		fi
 
-		if [[ "$mod_x" = 'patch' ]] && [[ $patch_one -eq 0 ]] && [[ $minor_one != 'x' ]]; then
-			mod_x='equal'
-		fi
-
-		[[ "$mod_x" = 'minor' ]] && max_x='major'
-		[[ "$mod_x" = 'patch' ]] && max_x='minor'
-
-		[[ "$max_x" = 'major' ]] && let "max_cap = $major_one + 1"
-		[[ "$max_x" = 'minor' ]] && let "max_cap = $minor_one + 1"
-		[[ "$max_x" = 'patch' ]] && let "max_cap = $patch_one + 1" # Reasonable?
 	else
+		# X-Range & Hyphen Range?
 		if [[ "$major_one" = 'x' ]]; then
 			mod_x='major'
-			max_cap=0
 		elif [[ "$minor_one" = 'x' ]]; then
 			mod_x='minor'
-			let "max_cap = $major_one + 1"
 		elif [[ "$patch_one" = 'x' ]]; then
 			mod_x='patch'
-			let "max_cap = $minor_one + 1"
 		else
 			mod_x='equal'
-			max_cap=0
 		fi
 	fi
 
-	template_error 'semver_compare_mmp() | range_one: %-2s | mod_x: %-6s | max_x: %-6s | max_cap: %d' "$range_one" "$mod_x" "$max_x" $max_cap
-	template_error 'semver_compare_mmp() | major_one: %-2s | minor_one: %-2s | patch_one: %-2s' $major_one $minor_one $patch_one
-	template_error 'semver_compare_mmp() | major_two: %-2s | minor_two: %-2s | patch_two: %-2s' $major_two $minor_two $patch_two
+	if [[ $debug = 0 ]]; then
+		template_error 'semver_compare_mmp() | range_one: %-2s | mod_x: %-6s' "$range_one" "$mod_x"
+		template_error 'semver_compare_mmp() | major_one: %-2s | minor_one: %-2s | patch_one: %-2s' $major_one $minor_one $patch_one
+		template_error 'semver_compare_mmp() | major_two: %-2s | minor_two: %-2s | patch_two: %-2s' $major_two $minor_two $patch_two
+	fi
 
-	semver_compare_mmp_mod "$major_one" "$minor_one" "$patch_one" "$major_two" "$minor_two" "$patch_two" "$mod_x" "$max_x" $max_cap
+	semver_compare_mmp_mod "$major_one" "$minor_one" "$patch_one" "$major_two" "$minor_two" "$patch_two" "$mod_x"
 	result_code=$?
-	verimp_error "semver_compare_mmp() | \$result_code: $result_code"
+	[[ $debug = 0 ]] && verimp_error "semver_compare_mmp() | \$result_code: $result_code"
 
 	return $result_code
 }
 
+
+###
+# semver_compare_prerelease()
+#
+# SemVer Prerelease Tag comparision
+#
+#
+# @param	$prtag_one	1st prerelease tag value
+# @param	$prtag_two	2nd prerelease tag value
+#
+# @return	digit	0: equality, 1: match, 2: mismatch
+#
 semver_compare_prerelease()
 {
 	local prtag_one="$1"
 	local prtag_two="$2"
 
-	local char_one
-	local char_two
 	local chunk_one
 	local chunk_two
+	local -i debug=1
+	local -i result=0
 
-	verimp_error "semver_compare_prerelease() | \$prtag_one: $prtag_one | \$prtag_two: $prtag_two"
+	[[ $debug -eq 0 ]] && verimp_error "semver_compare_prerelease() | \$prtag_one: $prtag_one | \$prtag_two: $prtag_two"
 
 	until [[ ${#prtag_one} -eq 0 ]] && [[ ${#prtag_two} -eq 0 ]]; do
-		:
+		chunk_one="${prtag_one%%.*}"
+		chunk_two="${prtag_two%%.*}"
+
+		if [[ ${#chunk_one} = 0 ]] && [[ ${#prtag_one} -gt 0 ]]; then
+			chunk_one="$prtag_one"
+		else
+			prtag_one="${prtag_one#$chunk_one}"
+		fi
+		if [[ ${#chunk_two} = 0 ]] && [[ ${#prtag_two} -gt 0 ]]; then
+			chunk_two="$prtag_two"
+		else
+			prtag_two="${prtag_two#$chunk_two}"
+		fi
+
+		[[ "${prtag_one:0:1}" = '.' ]] && prtag_one="${prtag_one:1}"
+		[[ "${prtag_two:0:1}" = '.' ]] && prtag_two="${prtag_two:1}"
+
+		if [[ $debug -eq 0 ]]; then
+			template_error "compare_prtag_one() | \$chunk_one: %8s | \$prtag_one: %s\n" "$chunk_one" "$prtag_one"
+			template_error "compare_prtag_one() | \$chunk_two: %8s | \$prtag_two: %s\n" "$chunk_two" "$prtag_two"
+		fi
+
+		#
+		# Empty chunks rate higher than non-empty
+		#
+		if [[ ! -z "$chunk_one" ]] && [[ -z "$chunk_two" ]]; then
+			result=1
+		elif [[ -z "$chunk_one" ]] && [[ ! -z "$chunk_two" ]]; then
+			result=2
+			break
+		else
+			if [[ "$chunk_one" = "$chunk_two" ]] && [[ $result -eq 0 ]]; then
+				result=0
+			elif [[ "$chunk_one" < "$chunk_two" ]]; then
+				result=1
+			else
+				result=2
+				break
+			fi
+		fi
 		break
 	done
+
+	return $result
 }
 
 
@@ -439,14 +463,16 @@ semver_ranged_check()
 
 template_error()
 {
-	# echo "-- \$1: $1" 1>&2 # Debugging
+	# echo "template_error() | \$1: $1" 1>&2 # Debugging
 	echo "  $(printf "$@")" 1>&2
 }
 
 
 verimp::compare()
 {
-	verimp_error 'verimp::compare() ...'
+	local -i debug=1
+
+	[[ $debug -eq 0 ]] && verimp_error 'verimp::compare() ...'
 
 	local -i auto_match=1
 	local -i comp_match=1
@@ -457,8 +483,10 @@ verimp::compare()
 	local ver_one="$1"
 	local ver_two="$2"
 
-	local -i result_code=0
+	local -i mmp_result_code=0
+	local -i pre_result_code=0
 	local result_msg=''
+	local result_code=0
 
 	local ver_one_range
 	local ver_one_ranged="$(semver_ranged_check "$ver_one")"
@@ -479,12 +507,12 @@ verimp::compare()
 	local ver_two_prtag
 	local ver_two_build
 
-	# verimp_error "verimp::compare() | \$ver_two: '$ver_two' | \$ver_two_clean: '$ver_two_clean'"
-	# verimp_error "verimp::compare() | \$ver_one_ranged: '$ver_one_ranged' | \$ver_two_ranged: '$ver_two_ranged'"
+	[[ $debug -eq 0 ]] && verimp_error "verimp::compare() | \$ver_two: '$ver_two' | \$ver_two_clean: '$ver_two_clean'"
+	[[ $debug -eq 0 ]] && verimp_error "verimp::compare() | \$ver_one_ranged: '$ver_one_ranged' | \$ver_two_ranged: '$ver_two_ranged'"
 
 
-	if [[ "$ver_one_ranged" = '' ]] || [[ "$ver_two_ranged" != '' ]]; then
-		# verimp_error "verimp::compare() | \$ver_two: $ver_two == ranged"
+	if [[ "$ver_one_ranged" = '' ]] && [[ "$ver_two_ranged" != '' ]]; then
+		[[ $debug -eq 0 ]] && verimp_error "verimp::compare() | \$ver_two: $ver_two == ranged"
 		ver_tmp="$ver_one"
 		ver_one="$ver_two"
 		ver_two="$ver_tmp"
@@ -495,7 +523,7 @@ verimp::compare()
 	fi
 
 	ver_one="$(verimp::normalize "$ver_one")"
-	ver_two="$(verimp::normalize "$ver_two")"
+	ver_two="$(verimp::normalize "$ver_two" 0)"
 
 	if [[ "$ver_one" =~ $SEMVER_NORMALIZE_RE ]]; then
 		ver_one_range="${BASH_REMATCH[1]}"  # SemVer Version denotation (v or V) or Range indicator (~ or ^). Optional
@@ -506,7 +534,7 @@ verimp::compare()
 		ver_one_prtag="${BASH_REMATCH[8]}"  # SemVer 2.0.0 Prerelease Tag. Optional
 		ver_one_build="${BASH_REMATCH[10]}" # SemVer 2.0.0 Build. Ignore when comparing. Optional
 	fi
-	template_error 'verimp::compare() | $ver_one | range: %1s | MMP: %-8s | prerelease: %-5s | build: %s' "$ver_one_range" "$ver_one_mmp" "$ver_one_prtag" "$ver_one_build"
+	[[ $debug -eq 0 ]] && template_error 'verimp::compare() | $ver_one | range: %1s | MMP: %-8s | prerelease: %-5s | build: %s' "$ver_one_range" "$ver_one_mmp" "$ver_one_prtag" "$ver_one_build"
 
 	if [[ "$ver_two" =~ $SEMVER_NORMALIZE_RE ]]; then
 		ver_two_range="${BASH_REMATCH[1]}"  # SemVer Version denotation (v or V) or Range indicator (~ or ^). Optional
@@ -517,72 +545,40 @@ verimp::compare()
 		ver_two_prtag="${BASH_REMATCH[8]}"  # SemVer 2.0.0 Prerelease Tag. Optional
 		ver_two_build="${BASH_REMATCH[10]}" # SemVer 2.0.0 Build. Ignore when comparing. Optional
 	fi
-	template_error 'verimp::compare() | $ver_two | range: %1s | MMP: %-8s | prerelease: %-5s | build: %s' "$ver_two_range" "$ver_two_mmp" "$ver_two_prtag" "$ver_two_build"
+	[[ $debug -eq 0 ]] && template_error 'verimp::compare() | $ver_two | range: %1s | MMP: %-8s | prerelease: %-5s | build: %s' "$ver_two_range" "$ver_two_mmp" "$ver_two_prtag" "$ver_two_build"
 
 	semver_compare_mmp "$ver_one_range" "$ver_one_major" "$ver_one_minor" "$ver_one_patch" "$ver_two_major" "$ver_two_minor" "$ver_two_patch"
-	result_code=$?
+	mmp_result_code=$?
 
-	verimp_error "verimp::compare() | \$result_code: $result_code"
+	semver_compare_prerelease "$ver_one_prtag" "$ver_two_prtag"
+	pre_result_code=$?
 
-	if [[ $result_code -eq 0 ]]; then
-		if [[ "x${ver_one_prtag}x" != 'xx' ]]; then
-			semver_compare_prerelease "$ver_one_prtag" "$ver_two_prtag"
-			result_code=$?
-		fi
-	elif [[ "x${ver_two_prtag}x" != 'xx' ]]; then
+	[[ $debug -eq 0 ]] && verimp_error "verimp::compare() | \$mmp_result_code: $mmp_result_code | \$pre_result_code: $pre_result_code | \$ver_one_prtag: $ver_one_prtag | \$ver_two_prtag: $ver_two_prtag"
+
+	if [[ $mmp_result_code -eq 0 ]] && [[ $pre_result_code -lt 2 ]]; then
+		result_code=0
+	elif [[ $mmp_result_code -eq 1 ]] && [[ "x${ver_two_prtag}x" = 'xx' ]]; then
+		result_code=0
+	else
 		result_code=1
 	fi
 
 	if [[ $result_code -eq 0 ]]; then
-		echo "Good Match"
-		exit 0
+		result_msg="Good Match $ver_one :: $ver_two"
 	else
-		echo "Bad Match"
-		exit 1
+		result_msg="Bad Match $ver_one :: $ver_two"
 	fi
 
-	#
-	#
-	# Caret Range:
-	# Allows modifications of minor or patch digits to the right of the left most non-zero digit.
-	# This is capped by the left most non-zero digit + 1.
-	# Examples:
-	# ^1     allows for >= 1.0.0 < 2.0.0
-	# ^1.2   allows for >= 1.2.0 < 2.0.0
-	# ^1.2.3 allows for >= 1.2.3 < 2.0.0
-	# ^0.1.2 allows for >= 0.1.2 < 0.2.0
-	#
-	#
-	# mod_x = if major is = 0 then minor
-	# mod_x = if mod_x = minor and minor is = 0 then patch
-	# mod_x = if mod_x = patch and patch is = 0 then no mod
-	#
-	#
-
-	# if [[ $major_good -eq 0 ]] && [[ $minor_good -eq 0 ]] && [[ $patch_good -eq 0 ]]; then
-	# 	verimp_error 'MMD Match!'
-
-	# 	if [[ "x$ver_one_prtagx" != 'xx' ]] && [[ "x${ver_two_prtag}x" != 'xx' ]]; then
-	# 		verimp_error 'Compare prerelease tags'
-	# 	fi
-	# else
-	# 	verimp_error 'MMD Mismatch!'
-	# fi
-
-	if [[ "$ver_two" = "$ver_tmp" ]]; then
-		ver_tmp="$ver_one"
-		ver_one="$ver_two"
-		ver_two="$ver_tmp"
-
-		var_tmp="$ver_one_ranged"
-		ver_one_ranged="$ver_two_ranged"
-		ver_two_ranged="$ver_tmp"
-	fi
+	[[ $debug -eq 0 ]] && verimp_error "verimp::compare() | \$result_msg: '$result_msg' | \$result_code: $result_code"
+	echo "$result_msg"
+	return $result_code
 }
 
 
 verimp::normalize()
 {
+	local -i debug=1
+
 	local build
 	local major
 	local minor
@@ -592,13 +588,11 @@ verimp::normalize()
 	local ranged=''
 	local result=''
 	local input="$1"
+	local x_zero="${2:-x}"
+
+	[[ $debug -eq 0 ]] && verimp_error "verimp::normalize() | \$input: $input"
 
 	if [[ "$input" =~ $SEMVER_NORMALIZE_RE ]]; then
-		# echo "\${BASH_REMATCH[6]}: ${BASH_REMATCH[6]}" 1>&2
-		# echo "\${BASH_REMATCH[7]}: ${BASH_REMATCH[7]}" 1>&2
-		# echo "\${BASH_REMATCH[8]}: ${BASH_REMATCH[8]}" 1>&2
-		# echo "\${BASH_REMATCH[9]}: ${BASH_REMATCH[9]}" 1>&2
-		# echo "\${BASH_REMATCH[10]}: ${BASH_REMATCH[10]}" 1>&2
 		range="${BASH_REMATCH[1]}"  # SemVer Version denotation (v or V) or Range indicator (~ or ^). Optional
 		major="${BASH_REMATCH[2]}"  # SemVer MMP Major Version. Mandatory
 		minor="${BASH_REMATCH[4]}"  # SemVer MMP Minor Version. Mandatory
@@ -606,18 +600,20 @@ verimp::normalize()
 		prtag="${BASH_REMATCH[8]}"  # SemVer 2.0.0 Prerelease Tag. Optional
 		build="${BASH_REMATCH[10]}" # SemVer 2.0.0 Build. Ignore when comparing. Optional
 
-		ranged="$(semver_ranger "$range" "$major" "$minor" "$patch")"
+		ranged="$(semver_ranger "$range" "$major" "$minor" "$patch" "$x_zero")"
 	fi
 
-	# echo "verimp::normalize() INPUT | \$input: $input" 1>&2
-	# echo "verimp::normalize() | \$major: $major | \$minor: $minor | \$patch: $patch | \$prtag: $prtag | \$build: $build" 1>&2
+	[[ $debug -eq 0 ]] && verimp_error "verimp::normalize() | \$input: $input | \$ranged: $ranged"
+
+	[[ $debug -eq 0 ]] && verimp_error "verimp::normalize() INPUT | \$input: $input"
+	[[ $debug -eq 0 ]] && verimp_error "verimp::normalize() | \$major: $major | \$minor: $minor | \$patch: $patch | \$prtag: $prtag | \$build: $build"
 	
 	result="${ranged}"
 	[[ "x${prtag}x" != 'xx' ]] && result="${result}-${prtag}"
 	[[ "x${build}x" != 'xx' ]] && result="${result}+${build}"
 
-	# echo "verimp::normalize() | \$input: $input | \$ranged: $ranged | \$result: $result" 1>&2
-	# verimp_error "$(printf 'verimp::normalize() | $input: %-8s | $ranged: %-8s | $result: %-8s\n' $input $ranged $result)"
+	[[ $debug -eq 0 ]] && verimp_error "verimp::normalize() | \$input: $input | \$ranged: $ranged | \$result: $result"
+	[[ $debug -eq 0 ]] && verimp_error "$(printf 'verimp::normalize() | $input: %-8s | $ranged: %-8s | $result: %-8s\n' $input $ranged $result)"
 
 	printf '%s' "$result"
 }
@@ -631,17 +627,30 @@ verimp_error()
 	fi
 }
 
-# echo "\$ver_one: $ver_one"
-# if [[ "x${ver_one}x" != "xx" ]] && [[ "x${ver_two}x" != "xx" ]]; then
 
 if [[ $# -eq 0 ]]; then
 	echo "  Usage: $APP_FILE ~1.2.3 1.2" 1>&2
 	exit 2
 elif [[ $# -eq 2 ]]; then
 	case "$1" in
-		normalize)  echo "$(verimp::normalize "$2")"    ;;
-		clean)      echo "$(semver_clean_re "$2")"      ;;
-		*)          echo "$(verimp::compare "$1" "$2")" ;;
+		normalize)
+			result_msg="$(verimp::normalize "$2")"
+			result_code=$?
+			echo "$result_msg"
+			exit $result_code
+			;;
+		clean)
+			result_msg="$(semver_clean_re "$2")"
+			result_code=$?
+			echo "$result_msg"
+			exit $result_code
+			;;
+		*)
+			result_msg="$(verimp::compare "$1" "$2")"
+			result_code=$?
+			echo "$result_msg"
+			exit $result_code
+			;;
 	esac
 else
 	case "$1" in
